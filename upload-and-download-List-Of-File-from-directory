@@ -1,0 +1,222 @@
+
+
+
+
+// model.java  <=============================================================================================================================================================
+
+package com.file.FileSpring.model;
+
+import jakarta.persistence.*;
+import lombok.*;
+
+@Entity
+@Table(name="user_info_List_file")
+
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class UserInfo {
+    @Id
+    @GeneratedValue(strategy= GenerationType.IDENTITY)
+    private Long id;
+    private Long userId;
+    private String username;
+    private String fileName;
+
+}
+
+// repo.java  <==============================================================================================================================================================
+
+package com.file.FileSpring.repository;
+
+import com.file.FileSpring.model.UserInfo;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public interface UserInfoRepository extends JpaRepository<UserInfo,Long> {
+    UserInfo findByuserId(Long userId);
+}
+
+
+// service.java  <=======================================================================================================================================================
+
+package com.file.FileSpring.service;
+
+import com.file.FileSpring.model.UserInfo;
+import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
+import java.util.List;
+
+@Service
+public interface UserInfoService {
+
+    // upload the file or image
+    List<UserInfo> uploadFile(List<UserInfo> userInfoList, List<MultipartFile> file) throws IOException;
+
+    // download the file or image
+    UserInfo downloadFile(Long userId) throws IOException;
+
+    // getAll
+    List<UserInfo> downloadAllFile() throws IOException;
+}
+
+// service_impl.java  <==================================================================================================================================================
+
+package com.file.FileSpring.service.impl;
+
+import com.file.FileSpring.model.UserInfo;
+import com.file.FileSpring.repository.UserInfoRepository;
+import com.file.FileSpring.service.UserInfoService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.List;
+
+@Service
+
+public class UserInfoServiceImpl implements UserInfoService {
+
+    @Autowired
+    private UserInfoRepository userInfoRepository;
+
+    private String uploadDir="C:\\Users\\piyush_kumar\\Desktop\\springFile";
+
+
+    @Override
+    public List<UserInfo> uploadFile(List<UserInfo> userInfoList, List<MultipartFile> file) throws IOException {
+
+        ArrayList<UserInfo>users=new ArrayList<>();
+        for(int i=0;i<userInfoList.size();i++){
+            UserInfo userInfo=userInfoList.get(i);
+            MultipartFile multipartFile=file.get(i);
+            UserInfo usersInfo=UserInfo.builder().userId(userInfo.getUserId()).
+                    username(userInfo.getUsername()).fileName(multipartFile.getOriginalFilename()).build();
+            users.add(usersInfo);
+
+            Path FilePath = Path.of(uploadDir,multipartFile.getOriginalFilename());
+            Files.createDirectories(FilePath.getParent());
+            Files.copy(multipartFile.getInputStream(), FilePath, StandardCopyOption.REPLACE_EXISTING);
+        }
+
+        List<UserInfo>userInfos=userInfoRepository.saveAll(users);
+        return userInfos;
+    }
+
+
+
+    @Override
+    public UserInfo downloadFile(Long userId) throws IOException {
+        UserInfo userInfo=userInfoRepository.findByuserId(userId);
+        String fileName=userInfo.getFileName();
+        Path filePath = Paths.get(uploadDir,fileName);
+        byte[] fileBytes = Files.readAllBytes(filePath);
+        String base64Image = Base64.getEncoder().encodeToString(fileBytes);
+        userInfo.setFileName(base64Image);
+        return userInfo;
+    }
+
+    @Override
+    public List<UserInfo> downloadAllFile() throws IOException {
+        List<UserInfo>userInfoList=userInfoRepository.findAll();
+        ArrayList<UserInfo>userInfoLists=new ArrayList<>();
+        for(UserInfo userInfo : userInfoList){
+            String fileName=userInfo.getFileName();
+            Path filePath = Paths.get(uploadDir,fileName);
+            byte[] fileBytes = Files.readAllBytes(filePath);
+            String base64Image = Base64.getEncoder().encodeToString(fileBytes);
+            userInfo.setFileName(base64Image);
+            userInfoLists.add(userInfo);
+        }
+        return userInfoLists;
+    }
+}
+
+
+
+// controller.java  <======================================================================================================================================================
+
+package com.file.FileSpring.controller;
+
+import com.file.FileSpring.model.UserInfo;
+import com.file.FileSpring.service.UserInfoService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
+import java.util.List;
+
+@RestController
+@RequestMapping("/file")
+public class UserInfoController {
+
+    @Autowired
+    private UserInfoService userInfoService;
+
+
+    @PostMapping("/upload")
+    public ResponseEntity<?>uploadFiles(@RequestPart List<UserInfo>userInfoList,@RequestPart List<MultipartFile> file) throws IOException {
+        List<UserInfo> userInfo=userInfoService.uploadFile(userInfoList,file);
+        if(userInfo !=null){
+            return ResponseEntity.ok(userInfo);
+        }
+        else{
+            return ResponseEntity.badRequest().body("File upload failed");
+        }
+    }
+
+
+    @GetMapping("/download/{userId}")
+    public ResponseEntity<?>Download(@PathVariable Long userId) throws IOException {
+        UserInfo user= userInfoService.downloadFile(userId);
+        if(user ==null){
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("User not found");
+        }
+        else{
+            return ResponseEntity.ok(user);
+        }
+    }
+
+    @GetMapping("/download-all")
+    public ResponseEntity<?>downloadAllFile() throws IOException {
+        List<UserInfo> user= userInfoService.downloadAllFile();
+        if(user ==null){
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("All User not found");
+        }
+        else{
+            return ResponseEntity.ok(user);
+        }
+    }
+}
+// application.properties  <================================================================================================================================================
+
+spring.application.name=FileSpring
+spring.datasource.url=jdbc:mysql://localhost:3306/file_spring
+spring.datasource.username=root
+spring.datasource.password=root
+spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
+spring.jpa.show-sql=true
+spring.jpa.generate-ddl=true
+spring.jpa.hibernate.ddl-auto=update
+
+
+
+// api 
+
+upload => http://localhost:8080/file/upload
+download => http://localhost:8080/file/download/2/abc   (here abc is folder name)  userId/folderName
